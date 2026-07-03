@@ -662,6 +662,96 @@ total_reward = max(total_reward, 0)
 | `dof_pos_limits` | -10.0 | 惩罚关节位置接近或超过限制，权重较大。 |
 | `dof_torque_limits` | -0.1 | 惩罚关节力矩超过软限制。 |
 
+### 12.6 TensorBoard 中怎么看这些奖励
+
+TensorBoard 是训练仪表盘。它不参与训练，只负责读取训练日志并把曲线画出来。
+
+在 TensorBoard 里：
+
+```text
+同一张图 = 同一个变量
+不同颜色 = 不同 run，也就是不同次训练实验
+浅色线 = 原始记录值，波动更明显
+深色线 = 平滑后的趋势线，用来看整体方向
+横坐标 = PPO learning iteration
+纵坐标 = 该变量的数值
+```
+
+当前训练中，1 个 iteration 表示每个环境采样 `24` 个 policy step。比如 `NUM_ENVS=3000` 时：
+
+```text
+1 iteration ≈ 3000 * 24 = 72000 条 transition
+```
+
+TensorBoard 里常见分组如下：
+
+| 分组 | 代表含义 | 重点看什么 |
+|---|---|---|
+| `Train/*` | 总体训练表现 | `mean_reward` 越高越好，`mean_episode_length` 越长通常越稳 |
+| `Loss/*` | PPO 和估计器损失 | 不要求单调下降，但不能长期爆炸或 NaN |
+| `Policy/*` | 策略探索状态 | `mean_noise_std` 表示动作随机探索幅度 |
+| `Perf/*` | 训练速度 | `total_fps` 越高训练越快，`collection time` 过大说明采样慢 |
+| `Observation/*` | 观测均值/方差 | 用来排查观测是否异常、爆炸、长期为 0 或 NaN |
+| `Episode/*` | 每个 episode 结束后统计的奖励分项 | 判断机器人具体是哪方面变好或变差 |
+
+`Episode/rew_xxx` 是“每个 episode 内该奖励项的平均贡献”。它已经乘过 reward scale，所以可以直接用来比较趋势。通俗判断：
+
+```text
+正奖励项：整体越高越好
+负惩罚项：整体越接近 0 越好
+曲线偶尔抖动正常，重点看深色趋势线
+```
+
+TensorBoard 中各个 `Episode/rew_*` 的含义：
+
+| TensorBoard 名称 | 简单含义 | 希望看到的趋势 |
+|---|---|---|
+| `Episode/rew_ref_joint_pos` | 关节是否接近参考步态或站立姿态 | 越高越好 |
+| `Episode/rew_default_joint_pos` | 髋 yaw/roll、踝 roll 等是否保持自然默认姿态 | 越高越好 |
+| `Episode/rew_stand_still` | 零速度命令时是否能安静站住 | 越高越好 |
+| `Episode/rew_feet_clearance` | 摆动脚是否抬到合适高度，避免拖脚 | 越高越好 |
+| `Episode/rew_feet_contact_number` | 左右脚接触是否符合步态相位 | 越高越好 |
+| `Episode/rew_feet_air_time` | 脚是否有合理腾空时间，避免贴地小碎步 | 越高越好 |
+| `Episode/rew_foot_slip` | 脚落地时是否打滑 | 负数越接近 0 越好 |
+| `Episode/rew_feet_distance` | 两脚距离是否合理，避免交叉或过宽 | 越高越好 |
+| `Episode/rew_knee_distance` | 两膝距离是否合理，避免膝盖互相靠太近 | 越高越好 |
+| `Episode/rew_feet_contact_forces` | 足底冲击力是否过大 | 负数越接近 0 越好 |
+| `Episode/rew_feet_rotation` | 脚掌是否尽量放平 | 越高越好 |
+| `Episode/rew_tracking_lin_vel` | 实际前后/左右速度是否跟随命令 | 越高越好 |
+| `Episode/rew_tracking_ang_vel` | 实际转向速度是否跟随命令 | 越高越好 |
+| `Episode/rew_track_vel_hard` | 更严格的速度和转向综合跟踪 | 越高越好，明显为负说明跟踪差 |
+| `Episode/rew_low_speed` | 防止该走时太慢、反向走或速度不合理 | 越高越好，负值说明速度问题明显 |
+| `Episode/rew_vel_mismatch_exp` | 抑制身体上下窜和 roll/pitch 晃动 | 越高越好 |
+| `Episode/rew_orientation` | 身体是否保持水平，不前后左右歪 | 越高越好 |
+| `Episode/rew_base_height` | 机身高度是否接近目标高度 | 越高越好 |
+| `Episode/rew_base_acc` | 身体运动是否平顺，少突然加速和抖动 | 越高越好 |
+| `Episode/rew_action_smoothness` | 动作是否平滑，是否少高频抖动 | 负数越接近 0 越好 |
+| `Episode/rew_torques` | 电机力矩是否小，是否省力 | 负数越接近 0 越好 |
+| `Episode/rew_dof_vel` | 关节速度是否过大 | 负数越接近 0 越好 |
+| `Episode/rew_dof_acc` | 关节加速度是否过大，动作是否冲 | 负数越接近 0 越好 |
+| `Episode/rew_collision` | 是否有非期望身体碰撞 | 负数越接近 0 越好 |
+| `Episode/rew_dof_pos_limits` | 关节位置是否接近或超过限位 | 通常应接近 0 |
+| `Episode/rew_dof_vel_limits` | 关节速度是否接近或超过限位 | 通常应接近 0 |
+| `Episode/rew_dof_torque_limits` | 关节力矩是否接近或超过限位 | 通常应接近 0 |
+| `Episode/terrain_level` | 当前课程地形难度 | 逐步升高说明能力在提升 |
+| `Episode/max_command_x` | 当前最大前进速度命令范围 | 反映速度课程范围 |
+
+实际看训练时，先盯住这几条就够：
+
+```text
+Train/mean_reward
+Train/mean_episode_length
+Episode/rew_tracking_lin_vel
+Episode/rew_ref_joint_pos
+Episode/rew_orientation
+Episode/rew_foot_slip
+Episode/rew_collision
+Episode/rew_action_smoothness
+Perf/total_fps
+```
+
+如果 `mean_reward` 上升、`mean_episode_length` 变长、速度跟踪和姿态奖励提高，同时打滑/碰撞/抖动惩罚接近 0，通常说明训练方向是好的。
+
 ## 13. 已定义但当前未启用的奖励函数
 
 环境代码中还定义了以下奖励函数，但当前 `rewards.scales` 没有给它们配置非零权重，所以默认不会进入总奖励：
