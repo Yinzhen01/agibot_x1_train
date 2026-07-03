@@ -152,6 +152,13 @@ def run_mujoco(policy, cfg, env_cfg):
     # model data
     data = mujoco.MjData(model)
     num_actuated_joints = env_cfg.env.num_actions  # This should match the number of actuated joints in your model
+    data.qpos[:3] = np.array(env_cfg.init_state.pos, dtype=np.double)
+    data.qpos[3:7] = np.array([
+        env_cfg.init_state.rot[3],
+        env_cfg.init_state.rot[0],
+        env_cfg.init_state.rot[1],
+        env_cfg.init_state.rot[2],
+    ], dtype=np.double)
     data.qpos[-num_actuated_joints:] = cfg.robot_config.default_dof_pos
 
 
