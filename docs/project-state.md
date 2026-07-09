@@ -12,6 +12,7 @@
 - 维护清晰的训练说明、奖励解释、PPO 解释和项目对比报告。
 - 支持本地训练、Isaac Gym 回放、导出、sim2sim、Gradmotion GUI 云桌面训练和一键远端部署。
 - 避免将 29DOF/F1 分支逻辑误迁移到当前 12DOF 项目。
+- 建立真机测试日志与本地 `.pt` 策略推理/仿真的分层对比流程。
 
 ## 已完成
 
@@ -32,6 +33,7 @@
 - 在具备 Isaac Gym/GPU 的环境中运行一次 `x1_dh_stand` 小规模 smoke。
 - 如果继续使用 Gradmotion 云任务，填充 `ops/gm-cli/payloads/*.local.json` 中的项目、镜像和资源 ID。
 - 如果要迁移 `agi_29` 的 29DOF 奖励或动作逻辑，先逐项核对 DOF 顺序、观测维度、action scale 和 sim2sim 端。
+- 按 `docs/reports/REAL_POLICY_PT_SIM_COMPARE_PLAN.md` 先完成真机 `.bin` 输入与 `.pt` 输出的离线一致性验证，再进入 MuJoCo/Isaac Gym 闭环仿真对比。
 - 如需提交本次整理，按 `docs/git-workflow.md` 暂存相关路径并使用中文 commit message。
 
 ## 关键决策
@@ -39,6 +41,7 @@
 - `2026-07-01`：当前项目保留 X1 12DOF 路线，`agi_29` 仅作为 29DOF/F1 参考，不直接混入训练配置。
 - `2026-07-01`：`docs/assets/` 保留媒体素材，文字文档统一放入 `docs/`。
 - `2026-07-01`：`ops/gradmotion/` 和 `ops/gm-cli/` 作为远端训练与云任务能力入口。
+- `2026-07-09`：真机日志对比采用分层流程：先用 `.pt` 离线复现真机 policy input/output，再进入动作后处理和仿真闭环对比；ONNX 不作为本地推理依据。
 
 ## 风险与注意事项
 
