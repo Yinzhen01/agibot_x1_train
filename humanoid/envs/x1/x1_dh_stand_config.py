@@ -123,7 +123,7 @@ class X1DHStandCfg(LeggedRobotCfg):
 
 
     class init_state(LeggedRobotCfg.init_state):
-        pos = [0.0, 0.0, 0.6101938959661087]
+        pos = [0.0, 0.0, 0.6091938959661087]
         rot = [-0.011276, -0.00186, -0.998009, 0.062022]
         dof_pos_noise = 0.0
 
@@ -254,7 +254,7 @@ class X1DHStandCfg(LeggedRobotCfg):
         add_lag = True
         randomize_lag_timesteps = True
         randomize_lag_timesteps_perstep = False
-        lag_timesteps_range = [5, 40]
+        lag_timesteps_range = [5, 12]
 
         add_ankle_torque_lag = True
         randomize_ankle_torque_lag_timesteps = True
@@ -312,7 +312,7 @@ class X1DHStandCfg(LeggedRobotCfg):
         soft_dof_pos_limit = 0.98
         soft_dof_vel_limit = 0.9
         soft_torque_limit = 0.9
-        base_height_target = 0.6101938959661087
+        base_height_target = 0.6091938959661087
         foot_min_dist = 0.2
         foot_max_dist = 1.0
 

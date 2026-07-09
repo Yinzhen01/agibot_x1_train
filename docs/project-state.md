@@ -43,7 +43,8 @@
 - `2026-07-01`：`ops/gradmotion/` 和 `ops/gm-cli/` 作为远端训练与云任务能力入口。
 - `2026-07-09`：真机日志对比采用分层流程：先用 `.pt` 离线复现真机 policy input/output，再进入动作后处理和仿真闭环对比；ONNX 不作为本地推理依据。
 - `2026-07-09`：训练延迟建模按部署链路区分关节类型：hip/knee 保留 action/位置目标延迟，ankle_pitch/ankle_roll 使用扭矩命令延迟 `[5, 8]` timesteps，避免脚踝同时受到 action lag 和 torque lag。
-- `2026-07-09`：`x1_dh_stand` 训练初始状态对齐到真机测例 `20260707_163855` 第 0 帧和 MuJoCo 推理接触高度：base_z `0.6101938959661087`，关节初始随机扰动关闭。
+- `2026-07-09`：`x1_dh_stand` 训练初始状态对齐到真机测例 `20260707_163855` 第 0 帧，并在 MuJoCo 推理接触高度基础上降低 1mm：base_z `0.6091938959661087`，关节初始随机扰动关闭。
+- `2026-07-09`：`x1_dh_stand` 的 hip/knee action/位置目标延迟范围从 `[5, 40]` timesteps 收窄到 `[5, 12]` timesteps，脚踝 torque lag 仍为 `[5, 8]` timesteps。
 
 ## 风险与注意事项
 
