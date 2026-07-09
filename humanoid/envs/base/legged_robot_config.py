@@ -109,6 +109,7 @@ class LeggedRobotCfg(BaseConfig):
         rot = [0.0, 0.0, 0.0, 1.0] # x,y,z,w [quat]
         lin_vel = [0.0, 0.0, 0.0]  # x,y,z [m/s]
         ang_vel = [0.0, 0.0, 0.0]  # x,y,z [rad/s]
+        dof_pos_noise = 0.1
         default_joint_angles = { # target angles when action = 0.0
             "joint_a": 0., 
             "joint_b": 0.}
@@ -253,6 +254,12 @@ class LeggedRobotCfg(BaseConfig):
         randomize_lag_timesteps = True
         randomize_lag_timesteps_perstep = False
         lag_timesteps_range = [5, 70]
+
+        add_ankle_torque_lag = False
+        randomize_ankle_torque_lag_timesteps = True
+        randomize_ankle_torque_lag_timesteps_perstep = False
+        ankle_torque_lag_timesteps_range = [5, 8]
+        ankle_torque_lag_joint_patterns = ["ankle_pitch", "ankle_roll"]
         
         add_dof_lag = False                # 这个是接收信号（dof_pos和dof_vel)的延迟,dof_pos 和dof_vel延迟一样
         randomize_dof_lag_timesteps = True

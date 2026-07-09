@@ -303,6 +303,20 @@ class LeggedRobot(BaseTask):
             else:
                 self.lag_timestep[env_ids] = self.cfg.domain_rand.lag_timesteps_range[1]
                       
+        if getattr(self.cfg.domain_rand, "add_ankle_torque_lag", False):
+            self.ankle_torque_lag_buffer[env_ids, :, :] = 0.0
+            if self.cfg.domain_rand.randomize_ankle_torque_lag_timesteps:
+                self.ankle_torque_lag_timestep[env_ids] = torch.randint(
+                    self.cfg.domain_rand.ankle_torque_lag_timesteps_range[0],
+                    self.cfg.domain_rand.ankle_torque_lag_timesteps_range[1] + 1,
+                    (len(env_ids),),
+                    device=self.device,
+                )
+                if self.cfg.domain_rand.randomize_ankle_torque_lag_timesteps_perstep:
+                    self.last_ankle_torque_lag_timestep[env_ids] = self.cfg.domain_rand.ankle_torque_lag_timesteps_range[1]
+            else:
+                self.ankle_torque_lag_timestep[env_ids] = self.cfg.domain_rand.ankle_torque_lag_timesteps_range[1]
+
         if self.cfg.domain_rand.add_dof_lag:
             self.dof_lag_buffer[env_ids, :, :] = 0.0
             if self.cfg.domain_rand.randomize_dof_lag_timesteps:
@@ -725,13 +739,37 @@ class LeggedRobot(BaseTask):
         else:
             p_gains = self.p_gains
             d_gains = self.d_gains
-            
+
+        target_actions_scaled = self.lagged_actions_scaled
+        add_ankle_torque_lag = getattr(self.cfg.domain_rand, "add_ankle_torque_lag", False)
+        if add_ankle_torque_lag:
+            target_actions_scaled = target_actions_scaled.clone()
+            target_actions_scaled[:, self.ankle_torque_lag_mask] = actions_scaled[:, self.ankle_torque_lag_mask]
+
+        torques = p_gains * (target_actions_scaled + self.default_dof_pos - self.dof_pos + self.motor_offsets) - d_gains * self.dof_vel
+
+        if add_ankle_torque_lag:
+            self.ankle_torque_lag_buffer[:, :, 1:] = self.ankle_torque_lag_buffer[
+                :, :, : self.cfg.domain_rand.ankle_torque_lag_timesteps_range[1]
+            ].clone()
+            self.ankle_torque_lag_buffer[:, :, 0] = torques.clone()
+            if self.cfg.domain_rand.randomize_ankle_torque_lag_timesteps_perstep:
+                self.ankle_torque_lag_timestep = torch.randint(
+                    self.cfg.domain_rand.ankle_torque_lag_timesteps_range[0],
+                    self.cfg.domain_rand.ankle_torque_lag_timesteps_range[1] + 1,
+                    (self.num_envs,),
+                    device=self.device,
+                )
+                cond = self.ankle_torque_lag_timestep > self.last_ankle_torque_lag_timestep + 1
+                self.ankle_torque_lag_timestep[cond] = self.last_ankle_torque_lag_timestep[cond] + 1
+                self.last_ankle_torque_lag_timestep = self.ankle_torque_lag_timestep.clone()
+            lagged_torques = self.ankle_torque_lag_buffer[
+                torch.arange(self.num_envs), :, self.ankle_torque_lag_timestep.long()
+            ]
+            torques[:, self.ankle_torque_lag_mask] = lagged_torques[:, self.ankle_torque_lag_mask]
+
         if self.cfg.domain_rand.randomize_coulomb_friction:
-            torques = p_gains * (self.lagged_actions_scaled + self.default_dof_pos - self.dof_pos + self.motor_offsets) -\
-            d_gains * self.dof_vel -\
-            self.randomized_joint_viscous * self.dof_vel - self.randomized_joint_coulomb * torch.sign(self.dof_vel)
-        else: 
-            torques = p_gains * (self.lagged_actions_scaled + self.default_dof_pos - self.dof_pos + self.motor_offsets) - d_gains * self.dof_vel
+            torques = torques - self.randomized_joint_viscous * self.dof_vel - self.randomized_joint_coulomb * torch.sign(self.dof_vel)
 
         if self.cfg.domain_rand.randomize_torque:
             motor_strength_ranges = self.cfg.domain_rand.torque_multiplier_range
@@ -750,7 +788,16 @@ class LeggedRobot(BaseTask):
             env_ids (List[int]): Environemnt ids
         """
         # rand env reset self.dof_pos, which sync with self.dof_state
-        self.dof_pos[env_ids] = self.default_dof_pos + torch_rand_float(-0.1, 0.1, (len(env_ids), self.num_dof), device=self.device)
+        dof_pos_noise = getattr(self.cfg.init_state, "dof_pos_noise", 0.1)
+        if dof_pos_noise > 0.0:
+            self.dof_pos[env_ids] = self.default_dof_pos + torch_rand_float(
+                -dof_pos_noise,
+                dof_pos_noise,
+                (len(env_ids), self.num_dof),
+                device=self.device,
+            )
+        else:
+            self.dof_pos[env_ids] = self.default_dof_pos
         self.dof_vel[env_ids] = 0.
 
         env_ids_int32 = env_ids.to(dtype=torch.int32)
@@ -911,6 +958,14 @@ class LeggedRobot(BaseTask):
         self.default_dof_pos = self.default_dof_pos.unsqueeze(0)
 
         self.default_joint_pd_target = self.default_dof_pos.clone()
+        ankle_torque_lag_patterns = getattr(self.cfg.domain_rand, "ankle_torque_lag_joint_patterns", ["ankle_pitch", "ankle_roll"])
+        self.ankle_torque_lag_mask = torch.tensor(
+            [any(pattern in name for pattern in ankle_torque_lag_patterns) for name in self.dof_names[: self.num_actions]],
+            dtype=torch.bool,
+            device=self.device,
+        )
+        if getattr(self.cfg.domain_rand, "add_ankle_torque_lag", False) and not torch.any(self.ankle_torque_lag_mask):
+            raise ValueError("add_ankle_torque_lag=True but no ankle joints matched ankle_torque_lag_joint_patterns")
         self.obs_history = deque(maxlen=self.cfg.env.frame_stack)
         self.critic_history = deque(maxlen=self.cfg.env.c_frame_stack)
         for _ in range(self.cfg.env.frame_stack):
@@ -933,6 +988,32 @@ class LeggedRobot(BaseTask):
                     self.last_lag_timestep = torch.ones(self.num_envs,device=self.device,dtype=int) * self.cfg.domain_rand.lag_timesteps_range[1]
             else:
                 self.lag_timestep = torch.ones(self.num_envs,device=self.device) * self.cfg.domain_rand.lag_timesteps_range[1]
+
+        if getattr(self.cfg.domain_rand, "add_ankle_torque_lag", False):
+            self.ankle_torque_lag_buffer = torch.zeros(
+                self.num_envs,
+                self.num_actions,
+                self.cfg.domain_rand.ankle_torque_lag_timesteps_range[1] + 1,
+                device=self.device,
+            )
+            if self.cfg.domain_rand.randomize_ankle_torque_lag_timesteps:
+                self.ankle_torque_lag_timestep = torch.randint(
+                    self.cfg.domain_rand.ankle_torque_lag_timesteps_range[0],
+                    self.cfg.domain_rand.ankle_torque_lag_timesteps_range[1] + 1,
+                    (self.num_envs,),
+                    device=self.device,
+                )
+                if self.cfg.domain_rand.randomize_ankle_torque_lag_timesteps_perstep:
+                    self.last_ankle_torque_lag_timestep = torch.ones(
+                        self.num_envs,
+                        device=self.device,
+                        dtype=int,
+                    ) * self.cfg.domain_rand.ankle_torque_lag_timesteps_range[1]
+            else:
+                self.ankle_torque_lag_timestep = torch.ones(
+                    self.num_envs,
+                    device=self.device,
+                ) * self.cfg.domain_rand.ankle_torque_lag_timesteps_range[1]
 
         if self.cfg.domain_rand.add_dof_lag:
             self.dof_lag_buffer = torch.zeros(self.num_envs,self.num_actions * 2,self.cfg.domain_rand.dof_lag_timesteps_range[1]+1,device=self.device)

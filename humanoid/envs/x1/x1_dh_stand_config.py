@@ -123,21 +123,23 @@ class X1DHStandCfg(LeggedRobotCfg):
 
 
     class init_state(LeggedRobotCfg.init_state):
-        pos = [0.0, 0.0, 0.61]
+        pos = [0.0, 0.0, 0.6101938959661087]
+        rot = [-0.011276, -0.00186, -0.998009, 0.062022]
+        dof_pos_noise = 0.0
 
         default_joint_angles = {  # = target angles [rad] when action = 0.0
-            'left_hip_pitch_joint': 0.4,
-            'left_hip_roll_joint': 0.05,
-            'left_hip_yaw_joint': -0.31,
-            'left_knee_pitch_joint': 0.49,
-            'left_ankle_pitch_joint': -0.21,
-            'left_ankle_roll_joint': 0.0,
-            'right_hip_pitch_joint': -0.4,
-            'right_hip_roll_joint': -0.05,
-            'right_hip_yaw_joint': 0.31,
-            'right_knee_pitch_joint': 0.49,
-            'right_ankle_pitch_joint': -0.21, 
-            'right_ankle_roll_joint': 0.0,
+            'left_hip_pitch_joint': 0.40028,
+            'left_hip_roll_joint': 0.0325017,
+            'left_hip_yaw_joint': -0.303637,
+            'left_knee_pitch_joint': 0.522616,
+            'left_ankle_pitch_joint': -0.209572,
+            'left_ankle_roll_joint': -0.000728335,
+            'right_hip_pitch_joint': -0.40258,
+            'right_hip_roll_joint': -0.0411305,
+            'right_hip_yaw_joint': 0.299994,
+            'right_knee_pitch_joint': 0.529136,
+            'right_ankle_pitch_joint': -0.209561, 
+            'right_ankle_roll_joint': 0.00485076,
         }
 
     class control(LeggedRobotCfg.control):
@@ -253,6 +255,12 @@ class X1DHStandCfg(LeggedRobotCfg):
         randomize_lag_timesteps = True
         randomize_lag_timesteps_perstep = False
         lag_timesteps_range = [5, 40]
+
+        add_ankle_torque_lag = True
+        randomize_ankle_torque_lag_timesteps = True
+        randomize_ankle_torque_lag_timesteps_perstep = False
+        ankle_torque_lag_timesteps_range = [5, 8]
+        ankle_torque_lag_joint_patterns = ["ankle_pitch", "ankle_roll"]
         
         add_dof_lag = True
         randomize_dof_lag_timesteps = True
@@ -304,7 +312,7 @@ class X1DHStandCfg(LeggedRobotCfg):
         soft_dof_pos_limit = 0.98
         soft_dof_vel_limit = 0.9
         soft_torque_limit = 0.9
-        base_height_target = 0.61
+        base_height_target = 0.6101938959661087
         foot_min_dist = 0.2
         foot_max_dist = 1.0
 
