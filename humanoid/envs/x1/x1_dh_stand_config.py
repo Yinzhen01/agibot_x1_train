@@ -48,6 +48,8 @@ class X1DHStandCfg(LeggedRobotCfg):
         num_privileged_obs = int(c_frame_stack * single_num_privileged_obs)
         num_actions = 12
         num_envs = 4096
+        # Keep commands and training rewards disabled for policy frames 0-9 after reset.
+        startup_delay_steps = 10
         episode_length_s = 24 #episode length in seconds
         use_ref_actions = False
         num_commands = 5 # sin_pos cos_pos vx vy vz
@@ -125,7 +127,8 @@ class X1DHStandCfg(LeggedRobotCfg):
     class init_state(LeggedRobotCfg.init_state):
         pos = [0.0, 0.0, 0.6091938959661087]
         rot = [-0.011276, -0.00186, -0.998009, 0.062022]
-        dof_pos_noise = 0.0
+        # Uniform joint-position perturbation applied independently on every reset [rad].
+        dof_pos_noise = 0.1
 
         default_joint_angles = {  # = target angles [rad] when action = 0.0
             'left_hip_pitch_joint': 0.40028,

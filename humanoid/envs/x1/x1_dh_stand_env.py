@@ -166,6 +166,8 @@ class X1DHStandEnv(LeggedRobot):
         if len(envs) == 0:
             return
 
+        startup_delay_steps = max(int(getattr(self.cfg.env, "startup_delay_steps", 0)), 0)
+
         # rand sample 
         random_tensor_list = []
         for i in range(len(self.cfg.commands.gait)):
@@ -179,13 +181,14 @@ class X1DHStandEnv(LeggedRobot):
         random_tensor = torch.cat([random_tensor_list[i] for i in range(len(self.cfg.commands.gait))], dim=1)
         current_sum = torch.sum(random_tensor,dim=1,keepdim=True)
         # scaled_tensor store proportion for each gait type
-        scaled_tensor = random_tensor * (self.max_episode_length / current_sum)
+        active_episode_length = max(self.max_episode_length - startup_delay_steps, 1)
+        scaled_tensor = random_tensor * (active_episode_length / current_sum)
         scaled_tensor[:,1:] = scaled_tensor[:,:-1].clone()
         scaled_tensor[:,0] *= 0.0
         # self.gait_time accumulate gait_duration_tick
         # self.gait_time = |__gait1__|__gait2__|__gait3__|
         # self.gait_time triger resample gait command
-        self.gait_time[envs] = torch.cumsum(scaled_tensor,dim=1).int()
+        self.gait_time[envs] = torch.cumsum(scaled_tensor,dim=1).int() + startup_delay_steps
      
     def _resample_commands(self):
         """ Randommly select commands of some environments
@@ -250,7 +253,11 @@ class X1DHStandEnv(LeggedRobot):
             Default behaviour: Compute ang vel command based on target and heading, compute measured terrain heights and randomly push robots
         """
         self.phase_length_buf += 1
+        startup_delay_steps = max(int(getattr(self.cfg.env, "startup_delay_steps", 0)), 0)
+        startup_env_ids = (self.episode_length_buf == startup_delay_steps).nonzero(as_tuple=False).flatten()
         self._resample_commands()
+        if startup_delay_steps > 0 and len(startup_env_ids) > 0:
+            self.phase_length_buf[startup_env_ids] = 0
         if self.cfg.commands.heading_command:
             forward = quat_apply(self.base_quat, self.forward_vec)
             heading = torch.atan2(forward[:, 1], forward[:, 0])
@@ -518,7 +525,9 @@ class X1DHStandEnv(LeggedRobot):
         # rand 0 or 0.5
         self.gait_start[env_ids] = torch.randint(0, 2, (len(env_ids),)).to(self.device)*0.5
         
-        #resample command
+        # Keep commands at zero during the startup delay, then let the gait schedule
+        # activate the first command at cfg.env.startup_delay_steps.
+        self.commands[env_ids] = 0.0
         self.generate_gait_time(env_ids)
         self._resample_commands()
         

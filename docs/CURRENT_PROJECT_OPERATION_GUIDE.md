@@ -312,6 +312,8 @@ phase/sin_pos 像动画进度条
 12. reset 已终止环境。
 13. 重新计算 actor/critic 观测。
 
+每次环境 reset 后有 `startup_delay_steps = 10` 个 policy step 的启动等待期。第 0～9 帧命令保持为 0，训练奖励及各奖励项的 episode 累计保持为 0；第 10 帧采样首个运动命令、重置步态相位并开始正常计奖。当前一个 policy step 为 10 ms，因此启动等待约为 100 ms。
+
 终止条件主要包括：
 
 - `base_link` 接触力超过阈值

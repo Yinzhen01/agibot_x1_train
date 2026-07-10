@@ -362,10 +362,16 @@ class LeggedRobot(BaseTask):
             adds each terms to the episode sums and to the total reward
         """
         self.rew_buf[:] = 0.
+        startup_delay_steps = max(int(getattr(self.cfg.env, "startup_delay_steps", 0)), 0)
+        reward_active = None
+        if startup_delay_steps > 0:
+            reward_active = (self.episode_length_buf >= startup_delay_steps).to(self.rew_buf.dtype)
 
         for i in range(len(self.reward_functions)):
             name = self.reward_names[i]
             rew = self.reward_functions[i]() * self.reward_scales[name]
+            if reward_active is not None:
+                rew = rew * reward_active
             self.rew_buf += rew
             self.episode_sums[name] += rew
         if self.cfg.rewards.only_positive_rewards:
@@ -373,6 +379,8 @@ class LeggedRobot(BaseTask):
         # add termination reward after clipping
         if "termination" in self.reward_scales:
             rew = self._reward_termination() * self.reward_scales["termination"]
+            if reward_active is not None:
+                rew = rew * reward_active
             self.rew_buf += rew
             self.episode_sums["termination"] += rew
 
