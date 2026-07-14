@@ -569,6 +569,18 @@ class X1DHStandEnv(LeggedRobot):
         """ Initialize torch tensors which will contain simulation states and processed quantities
         """
         super()._init_buffers()
+        ankle_pitch_indices = [
+            i for i, name in enumerate(self.dof_names[:self.num_actions])
+            if "ankle_pitch" in name
+        ]
+        if len(ankle_pitch_indices) != 2:
+            raise ValueError(
+                f"Expected two ankle pitch joints, found {len(ankle_pitch_indices)}: "
+                f"{ankle_pitch_indices}"
+            )
+        self.ankle_pitch_indices = torch.tensor(
+            ankle_pitch_indices, dtype=torch.long, device=self.device
+        )
         self.gait_time = torch.zeros(self.num_envs, len(self.cfg.commands.gait) ,dtype=torch.int, device=self.device, requires_grad=False)
         self.phase_length_buf = torch.zeros(
             self.num_envs, device=self.device, dtype=torch.long)
@@ -898,6 +910,27 @@ class X1DHStandEnv(LeggedRobot):
         out_of_limits = -(self.dof_pos - self.dof_pos_limits[:, 0]).clip(max=0.) # lower limit
         out_of_limits += (self.dof_pos - self.dof_pos_limits[:, 1]).clip(min=0.)
         return torch.sum(out_of_limits, dim=1)
+
+    def _reward_ankle_pitch_braking(self):
+        """Penalize ankle-pitch motion and targets that cross the early braking boundary."""
+        indices = self.ankle_pitch_indices
+        lower_limit = self.cfg.rewards.ankle_pitch_brake_lower_limit
+        lookahead = self.cfg.rewards.ankle_pitch_brake_lookahead_s
+
+        ankle_pos = self.dof_pos[:, indices]
+        ankle_vel = self.dof_vel[:, indices]
+        predicted_pos = ankle_pos + ankle_vel * lookahead
+        predicted_violation = (lower_limit - predicted_pos).clip(min=0.)
+
+        target_pos = (
+            self.default_dof_pos[:, indices]
+            + self.actions[:, indices] * self.cfg.control.action_scale
+            + self.motor_offsets[:, indices]
+        )
+        target_violation = (lower_limit - target_pos).clip(min=0.)
+        target_weight = self.cfg.rewards.ankle_pitch_target_limit_weight
+
+        return torch.sum(predicted_violation + target_weight * target_violation, dim=1)
 
     def _reward_dof_vel_limits(self):
         # Penalize dof velocities too close to the limit
