@@ -377,7 +377,7 @@ class X1DHStandCfg(LeggedRobotCfg):
             dof_pos_limits = -10.
             dof_torque_limits = -0.1
             ankle_pitch_braking = -50.
-            ankle_roll_braking = -50.
+            ankle_roll_braking = -100.
 
     class normalization:
         class obs_scales:
