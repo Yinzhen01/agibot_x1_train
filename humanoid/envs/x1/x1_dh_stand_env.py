@@ -581,6 +581,18 @@ class X1DHStandEnv(LeggedRobot):
         self.ankle_pitch_indices = torch.tensor(
             ankle_pitch_indices, dtype=torch.long, device=self.device
         )
+        ankle_roll_indices = [
+            i for i, name in enumerate(self.dof_names[:self.num_actions])
+            if "ankle_roll" in name
+        ]
+        if len(ankle_roll_indices) != 2:
+            raise ValueError(
+                f"Expected two ankle roll joints, found {len(ankle_roll_indices)}: "
+                f"{ankle_roll_indices}"
+            )
+        self.ankle_roll_indices = torch.tensor(
+            ankle_roll_indices, dtype=torch.long, device=self.device
+        )
         self.gait_time = torch.zeros(self.num_envs, len(self.cfg.commands.gait) ,dtype=torch.int, device=self.device, requires_grad=False)
         self.phase_length_buf = torch.zeros(
             self.num_envs, device=self.device, dtype=torch.long)
@@ -912,24 +924,55 @@ class X1DHStandEnv(LeggedRobot):
         return torch.sum(out_of_limits, dim=1)
 
     def _reward_ankle_pitch_braking(self):
-        """Penalize ankle-pitch motion and targets that cross the early braking boundary."""
+        """Penalize ankle-pitch motion and targets that cross either early braking boundary."""
         indices = self.ankle_pitch_indices
         lower_limit = self.cfg.rewards.ankle_pitch_brake_lower_limit
+        upper_limit = self.cfg.rewards.ankle_pitch_brake_upper_limit
         lookahead = self.cfg.rewards.ankle_pitch_brake_lookahead_s
 
         ankle_pos = self.dof_pos[:, indices]
         ankle_vel = self.dof_vel[:, indices]
         predicted_pos = ankle_pos + ankle_vel * lookahead
-        predicted_violation = (lower_limit - predicted_pos).clip(min=0.)
+        predicted_lower_violation = (lower_limit - predicted_pos).clip(min=0.)
+        predicted_upper_violation = (predicted_pos - upper_limit).clip(min=0.)
 
         target_pos = (
             self.default_dof_pos[:, indices]
             + self.actions[:, indices] * self.cfg.control.action_scale
             + self.motor_offsets[:, indices]
         )
-        target_violation = (lower_limit - target_pos).clip(min=0.)
+        target_lower_violation = (lower_limit - target_pos).clip(min=0.)
+        target_upper_violation = (target_pos - upper_limit).clip(min=0.)
         target_weight = self.cfg.rewards.ankle_pitch_target_limit_weight
 
+        predicted_violation = predicted_lower_violation + predicted_upper_violation
+        target_violation = target_lower_violation + target_upper_violation
+        return torch.sum(predicted_violation + target_weight * target_violation, dim=1)
+
+    def _reward_ankle_roll_braking(self):
+        """Penalize ankle-roll motion and targets that cross either early braking boundary."""
+        indices = self.ankle_roll_indices
+        lower_limit = self.cfg.rewards.ankle_roll_brake_lower_limit
+        upper_limit = self.cfg.rewards.ankle_roll_brake_upper_limit
+        lookahead = self.cfg.rewards.ankle_roll_brake_lookahead_s
+
+        ankle_pos = self.dof_pos[:, indices]
+        ankle_vel = self.dof_vel[:, indices]
+        predicted_pos = ankle_pos + ankle_vel * lookahead
+        predicted_lower_violation = (lower_limit - predicted_pos).clip(min=0.)
+        predicted_upper_violation = (predicted_pos - upper_limit).clip(min=0.)
+
+        target_pos = (
+            self.default_dof_pos[:, indices]
+            + self.actions[:, indices] * self.cfg.control.action_scale
+            + self.motor_offsets[:, indices]
+        )
+        target_lower_violation = (lower_limit - target_pos).clip(min=0.)
+        target_upper_violation = (target_pos - upper_limit).clip(min=0.)
+        target_weight = self.cfg.rewards.ankle_roll_target_limit_weight
+
+        predicted_violation = predicted_lower_violation + predicted_upper_violation
+        target_violation = target_lower_violation + target_upper_violation
         return torch.sum(predicted_violation + target_weight * target_violation, dim=1)
 
     def _reward_dof_vel_limits(self):

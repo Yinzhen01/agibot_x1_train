@@ -315,11 +315,17 @@ class X1DHStandCfg(LeggedRobotCfg):
         soft_dof_pos_limit = 0.98
         soft_dof_vel_limit = 0.9
         soft_torque_limit = 0.9
-        # Start braking before the ankle-pitch hard lower limit (-0.41 rad).
+        # Start braking before the ankle-pitch hard limits (-0.41, 0.35 rad).
         # The lookahead covers one 10 ms policy period plus the 5-8 ms ankle torque lag.
         ankle_pitch_brake_lower_limit = -0.35
+        ankle_pitch_brake_upper_limit = 0.29
         ankle_pitch_brake_lookahead_s = 0.02
         ankle_pitch_target_limit_weight = 0.5
+        # Start braking before the ankle-roll hard limits (-0.64, 0.64 rad).
+        ankle_roll_brake_lower_limit = -0.58
+        ankle_roll_brake_upper_limit = 0.58
+        ankle_roll_brake_lookahead_s = 0.02
+        ankle_roll_target_limit_weight = 0.5
         base_height_target = 0.6091938959661087
         foot_min_dist = 0.2
         foot_max_dist = 1.0
@@ -371,6 +377,7 @@ class X1DHStandCfg(LeggedRobotCfg):
             dof_pos_limits = -10.
             dof_torque_limits = -0.1
             ankle_pitch_braking = -20.
+            ankle_roll_braking = -50.
 
     class normalization:
         class obs_scales:
