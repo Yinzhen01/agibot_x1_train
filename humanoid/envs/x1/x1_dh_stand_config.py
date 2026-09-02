@@ -159,6 +159,36 @@ class X1DHStandCfg(LeggedRobotCfg):
         # decimation: Number of control action updates @ sim DT per policy DT
         decimation = 10  # 50hz 100hz
 
+        # Real-step-identified hip actuator channel.  This maps ideal joint PD
+        # torque to simulated applied torque; it does not replace mechanical
+        # inertia, friction, damping or contact.  Pitch/Roll use FOPDT, while
+        # Yaw uses the static-gain model selected by 100 Hz walking validation.
+        use_actuator_torque_dynamics = True
+        actuator_torque_dynamics = {
+            'left_hip_pitch_joint': {
+                'model': 'fopdt', 'delay_ms': 7.935,
+                'time_constant_ms': 3.7819, 'gain': 0.79683,
+            },
+            'right_hip_pitch_joint': {
+                'model': 'fopdt', 'delay_ms': 6.937,
+                'time_constant_ms': 4.5823, 'gain': 0.79310,
+            },
+            'left_hip_roll_joint': {
+                'model': 'fopdt', 'delay_ms': 7.828,
+                'time_constant_ms': 4.9369, 'gain': 0.86318,
+            },
+            'right_hip_roll_joint': {
+                'model': 'fopdt', 'delay_ms': 7.042,
+                'time_constant_ms': 6.5210, 'gain': 0.90500,
+            },
+            'left_hip_yaw_joint': {
+                'model': 'static_gain', 'gain': 0.52263,
+            },
+            'right_hip_yaw_joint': {
+                'model': 'static_gain', 'gain': 0.51651,
+            },
+        }
+
     class sim(LeggedRobotCfg.sim):
         dt = 0.001  # 200 Hz 1000 Hz
         substeps = 1  # 2

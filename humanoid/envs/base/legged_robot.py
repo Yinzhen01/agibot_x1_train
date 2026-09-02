@@ -44,6 +44,12 @@ from humanoid.envs.base.base_task import BaseTask
 # from humanoid.utils.terrain import Terrain
 from humanoid.utils.math import quat_apply_yaw, wrap_to_pi, torch_rand_sqrt_float
 from humanoid.utils.helpers import class_to_dict
+from humanoid.utils.actuator_torque_dynamics import (
+    MODEL_FOPDT,
+    MODEL_NONE,
+    MODEL_STATIC_GAIN,
+    resolve_actuator_torque_dynamics,
+)
 from .legged_robot_config import LeggedRobotCfg
 from humanoid.utils.terrain import Terrain
 
@@ -256,6 +262,9 @@ class LeggedRobot(BaseTask):
         self.actions[env_ids] = 0.
         self.last_actions[env_ids] = 0.
         self.last_torques[env_ids] = 0.
+        if self.use_actuator_torque_dynamics:
+            self.actuator_torque_delay_buffer[env_ids] = 0.
+            self.actuator_torque_state[env_ids] = 0.
         self.last_rigid_state[env_ids] = 0.
         self.last_contact_forces[env_ids] = 0.
         self.last_dof_vel[env_ids] = 0.
@@ -750,11 +759,17 @@ class LeggedRobot(BaseTask):
 
         target_actions_scaled = self.lagged_actions_scaled
         add_ankle_torque_lag = getattr(self.cfg.domain_rand, "add_ankle_torque_lag", False)
-        if add_ankle_torque_lag:
+        if add_ankle_torque_lag or self.use_actuator_torque_dynamics:
             target_actions_scaled = target_actions_scaled.clone()
+        if add_ankle_torque_lag:
             target_actions_scaled[:, self.ankle_torque_lag_mask] = actions_scaled[:, self.ankle_torque_lag_mask]
+        if self.use_actuator_torque_dynamics:
+            # These joints receive delay in torque space.  Reusing the generic
+            # action-delay buffer here would count the same actuator delay twice.
+            target_actions_scaled[:, self.actuator_torque_dynamics_mask] = actions_scaled[:, self.actuator_torque_dynamics_mask]
 
         torques = p_gains * (target_actions_scaled + self.default_dof_pos - self.dof_pos + self.motor_offsets) - d_gains * self.dof_vel
+        self.pd_torques = torques.clone()
 
         if add_ankle_torque_lag:
             self.ankle_torque_lag_buffer[:, :, 1:] = self.ankle_torque_lag_buffer[
@@ -776,15 +791,51 @@ class LeggedRobot(BaseTask):
             ]
             torques[:, self.ankle_torque_lag_mask] = lagged_torques[:, self.ankle_torque_lag_mask]
 
+        if self.cfg.domain_rand.randomize_torque:
+            # torque_multi is sampled once per environment reset in
+            # randomize_dof_props.  Resampling it every 1 ms injects artificial
+            # high-frequency multiplicative torque noise.
+            torques *= self.torque_multi
+
+        if self.use_actuator_torque_dynamics:
+            torques = self._apply_actuator_torque_dynamics(torques)
+
         if self.cfg.domain_rand.randomize_coulomb_friction:
             torques = torques - self.randomized_joint_viscous * self.dof_vel - self.randomized_joint_coulomb * torch.sign(self.dof_vel)
-
-        if self.cfg.domain_rand.randomize_torque:
-            motor_strength_ranges = self.cfg.domain_rand.torque_multiplier_range
-            self.torque_multi = torch_rand_float(motor_strength_ranges[0], motor_strength_ranges[1], (self.num_envs,self.num_actions), device=self.device)
-            torques *= self.torque_multi
             
         return torch.clip(torques, -self.torque_limits, self.torque_limits)
+
+    def _apply_actuator_torque_dynamics(self, ideal_torques):
+        """Map ideal PD torque to simulated actuator torque per physics step."""
+        self.actuator_torque_delay_buffer[:, :, 1:] = self.actuator_torque_delay_buffer[
+            :, :, :-1
+        ].clone()
+        self.actuator_torque_delay_buffer[:, :, 0] = ideal_torques
+
+        gather_shape = (self.num_envs, self.num_actions, 1)
+        lower_index = self.actuator_torque_delay_floor.view(1, -1, 1).expand(gather_shape)
+        upper_index = lower_index + 1
+        lower = torch.gather(self.actuator_torque_delay_buffer, 2, lower_index).squeeze(-1)
+        upper = torch.gather(self.actuator_torque_delay_buffer, 2, upper_index).squeeze(-1)
+        delayed = (
+            (1.0 - self.actuator_torque_delay_fraction) * lower
+            + self.actuator_torque_delay_fraction * upper
+        )
+
+        output = ideal_torques.clone()
+        static_mask = self.actuator_torque_model_codes == MODEL_STATIC_GAIN
+        output[:, static_mask] = (
+            self.actuator_torque_gain[static_mask] * ideal_torques[:, static_mask]
+        )
+
+        fopdt_mask = self.actuator_torque_model_codes == MODEL_FOPDT
+        next_state = self.actuator_torque_state[:, fopdt_mask] + self.actuator_torque_alpha[fopdt_mask] * (
+            self.actuator_torque_gain[fopdt_mask] * delayed[:, fopdt_mask]
+            - self.actuator_torque_state[:, fopdt_mask]
+        )
+        self.actuator_torque_state[:, fopdt_mask] = next_state
+        output[:, fopdt_mask] = next_state
+        return output
 
     
     def _reset_dofs(self, env_ids):
@@ -922,6 +973,7 @@ class LeggedRobot(BaseTask):
         self.gravity_vec = to_torch(get_axis_params(-1., self.up_axis_idx), device=self.device).repeat((self.num_envs, 1))
         self.forward_vec = to_torch([1., 0., 0.], device=self.device).repeat((self.num_envs, 1))
         self.torques = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
+        self.pd_torques = torch.zeros_like(self.torques)
         self.last_torques = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
         self.actions = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
         self.last_actions = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
@@ -974,6 +1026,7 @@ class LeggedRobot(BaseTask):
         )
         if getattr(self.cfg.domain_rand, "add_ankle_torque_lag", False) and not torch.any(self.ankle_torque_lag_mask):
             raise ValueError("add_ankle_torque_lag=True but no ankle joints matched ankle_torque_lag_joint_patterns")
+        self._init_actuator_torque_dynamics()
         self.obs_history = deque(maxlen=self.cfg.env.frame_stack)
         self.critic_history = deque(maxlen=self.cfg.env.c_frame_stack)
         for _ in range(self.cfg.env.frame_stack):
@@ -1061,6 +1114,56 @@ class LeggedRobot(BaseTask):
             else:
                 self.dof_vel_lag_timestep = torch.ones(self.num_envs,device=self.device) * self.cfg.domain_rand.dof_vel_lag_timesteps_range[1]
                           
+    def _init_actuator_torque_dynamics(self):
+        """Build fixed per-joint actuator-channel tensors from control config."""
+        self.use_actuator_torque_dynamics = bool(
+            getattr(self.cfg.control, "use_actuator_torque_dynamics", False)
+        )
+        self.actuator_torque_dynamics_mask = torch.zeros(
+            self.num_actions, dtype=torch.bool, device=self.device
+        )
+        if not self.use_actuator_torque_dynamics:
+            return
+
+        specs = getattr(self.cfg.control, "actuator_torque_dynamics", {})
+        params = resolve_actuator_torque_dynamics(
+            self.dof_names[: self.num_actions], specs, self.sim_params.dt
+        )
+        if not np.any(params["model_codes"] != MODEL_NONE):
+            raise ValueError(
+                "use_actuator_torque_dynamics=True but no active joint model was configured"
+            )
+
+        self.actuator_torque_model_codes = torch.tensor(
+            params["model_codes"], dtype=torch.long, device=self.device
+        )
+        self.actuator_torque_dynamics_mask = self.actuator_torque_model_codes != MODEL_NONE
+        self.actuator_torque_gain = torch.tensor(
+            params["gain"], dtype=torch.float, device=self.device
+        )
+        self.actuator_torque_delay_floor = torch.tensor(
+            params["delay_floor"], dtype=torch.long, device=self.device
+        )
+        self.actuator_torque_delay_fraction = torch.tensor(
+            params["delay_fraction"], dtype=torch.float, device=self.device
+        ).unsqueeze(0)
+        self.actuator_torque_alpha = torch.tensor(
+            params["alpha"], dtype=torch.float, device=self.device
+        )
+        self.actuator_torque_delay_buffer = torch.zeros(
+            self.num_envs,
+            self.num_actions,
+            params["max_delay_steps"] + 2,
+            dtype=torch.float,
+            device=self.device,
+        )
+        self.actuator_torque_state = torch.zeros(
+            self.num_envs,
+            self.num_actions,
+            dtype=torch.float,
+            device=self.device,
+        )
+
     def _prepare_reward_function(self):
         """ Prepares a list of reward functions, which will be called to compute the total reward.
             Looks for self._reward_<REWARD_NAME>, where <REWARD_NAME> are names of all non zero reward scales in the cfg.

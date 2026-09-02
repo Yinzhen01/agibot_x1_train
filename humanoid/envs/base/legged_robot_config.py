@@ -125,6 +125,10 @@ class LeggedRobotCfg(BaseConfig):
         action_scale = 0.5
         # decimation: Number of control action updates @ sim DT per policy DT
         decimation = 4
+        # Optional simulation-only map from ideal PD torque to applied torque.
+        # Supported models: static_gain and fopdt.  Keys must be exact DOF names.
+        use_actuator_torque_dynamics = False
+        actuator_torque_dynamics = {}
 
     class asset:
         file = ""

@@ -42,6 +42,7 @@ import torch
 import pygame
 from threading import Thread
 from humanoid.utils.helpers import get_load_path
+from humanoid.utils.actuator_torque_dynamics import NumpyActuatorTorqueDynamics
 import os
 import time
 
@@ -166,6 +167,13 @@ def run_mujoco(policy, cfg, env_cfg):
     viewer = mujoco_viewer.MujocoViewer(model, data)
     target_q = np.zeros((env_cfg.env.num_actions), dtype=np.double)
     action = np.zeros((env_cfg.env.num_actions), dtype=np.double)
+    actuator_torque_dynamics = NumpyActuatorTorqueDynamics(
+        cfg.robot_config.dof_names,
+        getattr(env_cfg.control, "actuator_torque_dynamics", {})
+        if getattr(env_cfg.control, "use_actuator_torque_dynamics", False)
+        else {},
+        cfg.sim_config.dt,
+    )
 
     hist_obs = deque()
     for _ in range(env_cfg.env.frame_stack):
@@ -238,8 +246,9 @@ def run_mujoco(policy, cfg, env_cfg):
 
         target_dq = np.zeros((env_cfg.env.num_actions), dtype=np.double)
         # Generate PD control
-        tau = pd_control(target_q, q, cfg.robot_config.kps,
-                        target_dq, dq, cfg.robot_config.kds, cfg)  # Calc torques
+        ideal_tau = pd_control(target_q, q, cfg.robot_config.kps,
+                              target_dq, dq, cfg.robot_config.kds, cfg)
+        tau = actuator_torque_dynamics.update(ideal_tau)
         tau = np.clip(tau, -cfg.robot_config.tau_limit, cfg.robot_config.tau_limit)  # Clamp torques
         
         data.ctrl = tau
@@ -269,6 +278,7 @@ def run_mujoco(policy, cfg, env_cfg):
                     'dof_pos': q[idx],
                     'dof_vel': dq[idx],
                     'dof_torque': applied_tau[idx],
+                    'ideal_cmd_dof_torque': ideal_tau[idx],
                     'cmd_dof_torque': tau[idx],
                 }
 
@@ -283,6 +293,8 @@ def run_mujoco(policy, cfg, env_cfg):
             # add dof_torque
             for i in range(env_cfg.env.num_actions):
                 dict[f'dof_torque[{i}]'] = applied_tau[i].item()
+                dict[f'ideal_cmd_dof_torque[{i}]'] = ideal_tau[i].item()
+                dict[f'cmd_dof_torque[{i}]'] = tau[i].item()
 
             # add dof_vel
             for i in range(env_cfg.env.num_actions):
@@ -315,6 +327,7 @@ if __name__ == '__main__':
             decimation = 10
 
         class robot_config:
+            dof_names = list(env_cfg.init_state.default_joint_angles.keys())
             # get PD gain
             kps = np.array([env_cfg.control.stiffness[joint] for joint in env_cfg.control.stiffness.keys()]*2, dtype=np.double)
             kds = np.array([env_cfg.control.damping[joint] for joint in env_cfg.control.damping.keys()]*2, dtype=np.double)
