@@ -30,10 +30,22 @@
 
 # Copyright (c) 2024, AgiBot Inc. All rights reserved.
 
-import matplotlib.pyplot as plt
 import numpy as np
 from collections import defaultdict
 from multiprocessing import Process, Value
+
+
+class _LazyPyplot:
+    """Import plotting support only when an interactive plot is requested."""
+
+    def __getattr__(self, name):
+        from matplotlib import pyplot
+
+        globals()['plt'] = pyplot
+        return getattr(pyplot, name)
+
+
+plt = _LazyPyplot()
 
 class Logger:
     def __init__(self, dt):
