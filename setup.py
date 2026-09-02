@@ -30,8 +30,7 @@
 
 # Copyright (c) 2024, AgiBot Inc. All rights reserved.
 
-from setuptools import find_packages
-from distutils.core import setup
+from setuptools import find_packages, setup
 
 setup(
     name='humanoid',
@@ -41,12 +40,19 @@ setup(
     packages=find_packages(),
     author_email='developer@zhiyuan-robot.com',
     description='Isaac Gym environments for Legged Robots',
-    install_requires=['isaacgym',  # preview4
-                      'tensorboard',
-                      'numpy==1.23.5',
-                      'opencv-python',
-                      'mujoco==2.3.6',
-                      'mujoco-python-viewer',
-                      'matplotlib',
-                      'wandb']
+    install_requires=[
+        'isaacgym',  # preview4
+        'tensorboard',
+        'numpy>=1.23,<2',
+        'wandb',
+    ],
+    extras_require={
+        'deploy': [
+            'opencv-python',
+            'mujoco==2.3.6',
+            'mujoco-python-viewer',
+            'matplotlib',
+            'pygame',
+        ],
+    },
 )
