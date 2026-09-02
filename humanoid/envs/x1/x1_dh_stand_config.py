@@ -77,8 +77,8 @@ class X1DHStandCfg(LeggedRobotCfg):
         fix_base_link = False
 
     class terrain(LeggedRobotCfg.terrain):
-        # mesh_type = 'plane'
-        mesh_type = 'trimesh'
+        # Deterministic learnability baseline: train on a flat plane first.
+        mesh_type = 'plane'
         curriculum = False
         # rough terrain only:
         measure_heights = False
@@ -111,7 +111,7 @@ class X1DHStandCfg(LeggedRobotCfg):
         restitution = 0.
 
     class noise(LeggedRobotCfg.noise):
-        add_noise = True
+        add_noise = False
         noise_level = 1.5    # scales other values
 
         class noise_scales(LeggedRobotCfg.noise.noise_scales):
@@ -128,7 +128,7 @@ class X1DHStandCfg(LeggedRobotCfg):
         pos = [0.0, 0.0, 0.6091938959661087]
         rot = [-0.011276, -0.00186, -0.998009, 0.062022]
         # Uniform joint-position perturbation applied independently on every reset [rad].
-        dof_pos_noise = 0.1
+        dof_pos_noise = 0.0
 
         default_joint_angles = {  # = target angles [rad] when action = 0.0
             'left_hip_pitch_joint': 0.40028,
@@ -209,40 +209,43 @@ class X1DHStandCfg(LeggedRobotCfg):
             contact_collection = 2
 
     class domain_rand(LeggedRobotCfg.domain_rand):
-        randomize_friction = True
+        # Keep all stochastic domain randomization disabled while validating
+        # basic learnability. The deterministic actuator model remains enabled
+        # in control.use_actuator_torque_dynamics.
+        randomize_friction = False
         friction_range = [0.2, 1.3]
         restitution_range = [0.0, 0.4]
 
         # push
-        push_robots = True
+        push_robots = False
         push_interval_s = 4 # every this second, push robot
         update_step = 2000 * 24 # after this count, increase push_duration index
         push_duration = [0, 0.05, 0.1, 0.15, 0.2, 0.25] # increase push duration during training
         max_push_vel_xy = 0.2
         max_push_ang_vel = 0.2
 
-        randomize_base_mass = True
+        randomize_base_mass = False
         added_mass_range = [-3, 3] # base mass rand range, base mass is all fix link sum mass
 
-        randomize_com = True
+        randomize_com = False
         com_displacement_range = [[-0.05, 0.05],
                                   [-0.05, 0.05],
                                   [-0.05, 0.05]]
 
-        randomize_gains = True
+        randomize_gains = False
         stiffness_multiplier_range = [0.8, 1.2]  # Factor
         damping_multiplier_range = [0.8, 1.2]    # Factor
 
-        randomize_torque = True
+        randomize_torque = False
         torque_multiplier_range = [0.8, 1.2]
 
-        randomize_link_mass = True
+        randomize_link_mass = False
         added_link_mass_range = [0.9, 1.1]
 
-        randomize_motor_offset = True
+        randomize_motor_offset = False
         motor_offset_range = [-0.035, 0.035] # Offset to add to the motor angles
         
-        randomize_joint_friction = True
+        randomize_joint_friction = False
         randomize_joint_friction_each_joint = False
         joint_friction_range = [0.01, 1.15]
         joint_1_friction_range = [0.01, 1.15]
@@ -256,7 +259,7 @@ class X1DHStandCfg(LeggedRobotCfg):
         joint_9_friction_range = [0.5, 1.3]
         joint_10_friction_range = [0.5, 1.3]
 
-        randomize_joint_damping = True
+        randomize_joint_damping = False
         randomize_joint_damping_each_joint = False
         joint_damping_range = [0.3, 1.5]
         joint_1_damping_range = [0.3, 1.5]
@@ -270,7 +273,7 @@ class X1DHStandCfg(LeggedRobotCfg):
         joint_9_damping_range = [0.9, 1.5]
         joint_10_damping_range = [0.9, 1.5]
 
-        randomize_joint_armature = True
+        randomize_joint_armature = False
         randomize_joint_armature_each_joint = False
         joint_armature_range = [0.0001, 0.05]     # Factor
         joint_1_armature_range = [0.0001, 0.05]
@@ -284,19 +287,19 @@ class X1DHStandCfg(LeggedRobotCfg):
         joint_9_armature_range = [0.0001, 0.05]
         joint_10_armature_range = [0.0001, 0.05]
 
-        add_lag = True
-        randomize_lag_timesteps = True
+        add_lag = False
+        randomize_lag_timesteps = False
         randomize_lag_timesteps_perstep = False
         lag_timesteps_range = [5, 12]
 
-        add_ankle_torque_lag = True
-        randomize_ankle_torque_lag_timesteps = True
+        add_ankle_torque_lag = False
+        randomize_ankle_torque_lag_timesteps = False
         randomize_ankle_torque_lag_timesteps_perstep = False
         ankle_torque_lag_timesteps_range = [5, 8]
         ankle_torque_lag_joint_patterns = ["ankle_pitch", "ankle_roll"]
         
-        add_dof_lag = True
-        randomize_dof_lag_timesteps = True
+        add_dof_lag = False
+        randomize_dof_lag_timesteps = False
         randomize_dof_lag_timesteps_perstep = False
         dof_lag_timesteps_range = [0, 40]
         
@@ -309,11 +312,11 @@ class X1DHStandCfg(LeggedRobotCfg):
         dof_vel_lag_timesteps_range = [7, 25]
         
         add_imu_lag = False
-        randomize_imu_lag_timesteps = True
+        randomize_imu_lag_timesteps = False
         randomize_imu_lag_timesteps_perstep = False
         imu_lag_timesteps_range = [1, 10]
         
-        randomize_coulomb_friction = True
+        randomize_coulomb_friction = False
         joint_coulomb_range = [0.1, 0.9]
         joint_viscous_range = [0.05, 0.1]
         
